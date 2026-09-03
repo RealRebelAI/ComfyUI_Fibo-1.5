@@ -1,6 +1,6 @@
 # ComfyUI-Fibo-1.5
 
-Custom ComfyUI nodes for running **BRIA Fibo 1.5 GGUF** models with City96's ComfyUI-GGUF backend.
+Custom ComfyUI nodes for running **BRIA Fibo 1.5 GGUF** and INT8 Convrot models with City96's ComfyUI-GGUF backend.
 
 This project adds a Fibo-specific runtime to ComfyUI while keeping the original BRIA/Diffusers-style transformer tensor names. It is intended for running quantized Fibo 1.5 transformer models without requiring a destructive tensor-key remap.
 
