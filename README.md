@@ -30,7 +30,7 @@ This project adds a Fibo-specific runtime to ComfyUI while keeping the original 
   - Fibo transformer GGUF
   - SmolLM3 text encoder weights
   - Wan/Fibo VAE weights
-  - Fibo text encoder/tokenizer/VAE configuration files
+  - (Fibo text encoder/tokenizer/VAE configuration files are inside the custom node set to save download time.)
 
 The Fibo model itself is **not included** in this repository.
 
