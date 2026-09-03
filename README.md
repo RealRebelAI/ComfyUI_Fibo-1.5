@@ -1,4 +1,4 @@
-# ComfyUI-Fibo-GGUF
+# ComfyUI-Fibo-1.5
 
 Custom ComfyUI nodes for running **BRIA Fibo 1.5 GGUF** models with City96's ComfyUI-GGUF backend.
 
