@@ -1,6 +1,6 @@
-# ComfyUI-Fibo-1.5
+# ComfyUI-Fibo-GGUF
 
-Custom ComfyUI nodes for running **BRIA Fibo 1.5 GGUF** and INT8 Convrot models with City96's ComfyUI-GGUF backend.
+Custom ComfyUI nodes for running **BRIA Fibo 1.5 GGUF** models with City96's ComfyUI-GGUF backend.
 
 This project adds a Fibo-specific runtime to ComfyUI while keeping the original BRIA/Diffusers-style transformer tensor names. It is intended for running quantized Fibo 1.5 transformer models without requiring a destructive tensor-key remap.
 
@@ -30,7 +30,7 @@ This project adds a Fibo-specific runtime to ComfyUI while keeping the original 
   - Fibo transformer GGUF
   - SmolLM3 text encoder weights
   - Wan/Fibo VAE weights
-  - (Fibo text encoder/tokenizer/VAE configuration files are inside the custom node set to save download time.)
+  - Fibo text encoder/tokenizer/VAE configuration files
 
 The Fibo model itself is **not included** in this repository.
 
