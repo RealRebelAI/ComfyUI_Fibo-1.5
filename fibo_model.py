@@ -11,7 +11,7 @@ import comfy.conds
 import comfy.latent_formats
 import comfy.supported_models_base
 
-print("[Fibo] fibo_model v6-edit-turbo loaded")
+print("[Fibo] fibo_model v6.1-edit-turbo-samplingfix loaded")
 # FIBO_EDIT_TURBO_SUPPORT_V1
 
 def timestep_embedding(t, dim=256, max_period=10000):
@@ -197,22 +197,16 @@ class FiboTransformer(nn.Module):
         frames=1
 
         if input_ndim==5:
-            # Comfy Wan latent format: B,C,T,H,W.
-            # Fibo image generation currently expects a single image frame.
             b,c,frames,h,w=x.shape
             if frames != 1:
                 raise RuntimeError(
                     f"Fibo image runtime currently expects T=1 Wan latent, got shape {tuple(x.shape)}"
                 )
             x=x[:,:,0].permute(0,2,3,1).reshape(b,h*w,c)
-
         elif input_ndim==4:
-            # Standard Comfy image latent: B,C,H,W.
             b,c,h,w=x.shape
             x=x.permute(0,2,3,1).reshape(b,h*w,c)
-
         elif input_ndim==3:
-            # Already packed sequence: B,S,C.
             b,s,c=x.shape
             h=int(math.sqrt(s))
             if h*h != s:
@@ -220,7 +214,6 @@ class FiboTransformer(nn.Module):
                     f"Cannot infer square Fibo latent grid from sequence length {s}."
                 )
             w=s//h
-
         else:
             raise RuntimeError(
                 f"Unsupported Fibo latent rank {input_ndim}; expected BCHW, BCTHW, or BSC. "
@@ -283,24 +276,17 @@ class FiboTransformer(nn.Module):
             joined=block(torch.cat([enc,hidden],1),temb,rope,mask)
             enc,hidden=joined[:,:n],joined[:,n:]
         out=self.proj_out(self.norm_out(hidden,temb))
-        # Reference tokens condition the transformer but are never denoised by Comfy's sampler.
         out=out[:,:generated_token_count]
 
         if input_ndim==5:
             out=out.reshape(b,h,w,self.in_channels).permute(0,3,1,2).contiguous()
-            out=out.unsqueeze(2)  # B,C,1,H,W
+            out=out.unsqueeze(2)
         elif input_ndim==4:
             out=out.reshape(b,h,w,self.in_channels).permute(0,3,1,2).contiguous()
 
         return out
 
 class FiboLatentFormat(comfy.latent_formats.LatentFormat):
-    """Native Fibo 1.5 image latent format.
-
-    Fibo uses a 48-channel 2D latent with 16x spatial downscale.
-    Keep model-space latents pass-through; VAE normalization is handled
-    by the Fibo VAE wrapper.
-    """
     latent_channels = 48
     latent_dimensions = 2
     spacial_downscale_ratio = 16
@@ -313,12 +299,11 @@ class FiboLatentFormat(comfy.latent_formats.LatentFormat):
     def process_out(self, latent):
         return latent
 
-
 class FiboModelConfig(comfy.supported_models_base.BASE):
     unet_extra_config={}
     latent_format=FiboLatentFormat
     supported_inference_dtypes=[torch.bfloat16,torch.float16,torch.float32]
-    sampling_settings={"multiplier":1000.0,"shift":1.0}
+    sampling_settings={"multiplier":1.0,"shift":1.15}
     memory_usage_factor=2.0
     def model_type(self,state_dict,prefix=""): return comfy.model_base.ModelType.FLOW
     def get_model(self,state_dict,prefix="",device=None): return FiboBaseModel(self,device=device)
