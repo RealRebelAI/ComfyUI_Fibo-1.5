@@ -11,7 +11,8 @@ import comfy.conds
 import comfy.latent_formats
 import comfy.supported_models_base
 
-print("[Fibo] fibo_model v5-48ch loaded")
+print("[Fibo] fibo_model v6-edit-turbo loaded")
+# FIBO_EDIT_TURBO_SUPPORT_V1
 
 def timestep_embedding(t, dim=256, max_period=10000):
     half=dim//2
@@ -175,13 +176,23 @@ class FiboTransformer(nn.Module):
         self.proj_out=operations.Linear(self.inner_dim,in_channels,bias=True,device=device,dtype=dtype)
         total=num_layers+num_single_layers
         self.caption_projection=nn.ModuleList([CaptionProjection(text_encoder_dim,self.inner_dim//2,operations,device,dtype) for _ in range(total)])
-    def ids(self,tlen,h,w,device,dtype):
+    def ids(self,tlen,h,w,device,dtype,reference_ids=None):
         txt=torch.zeros(tlen,3,device=device,dtype=dtype)
         img=torch.zeros(h,w,3,device=device,dtype=dtype)
         img[...,1]=torch.arange(h,device=device,dtype=dtype)[:,None]
         img[...,2]=torch.arange(w,device=device,dtype=dtype)[None,:]
-        return torch.cat([txt,img.reshape(h*w,3)],0)
-    def forward(self,x,timestep,context=None,fibo_text_layers=None,fibo_attention_mask=None,**kwargs):
+        parts=[txt,img.reshape(h*w,3)]
+        if reference_ids is not None:
+            rid=reference_ids
+            if rid.ndim==3:
+                if rid.shape[0] != 1:
+                    raise RuntimeError(f"Fibo Edit reference ids batch must be 1 before expansion, got {tuple(rid.shape)}")
+                rid=rid[0]
+            if rid.ndim != 2 or rid.shape[-1] != 3:
+                raise RuntimeError(f"Fibo Edit reference ids must be [S,3] or [1,S,3], got {tuple(rid.shape)}")
+            parts.append(rid.to(device=device,dtype=dtype))
+        return torch.cat(parts,0)
+    def forward(self,x,timestep,context=None,fibo_text_layers=None,fibo_attention_mask=None,fibo_edit_latents=None,fibo_edit_ids=None,**kwargs):
         input_ndim=x.ndim
         frames=1
 
@@ -216,6 +227,30 @@ class FiboTransformer(nn.Module):
                 f"Got shape {tuple(x.shape)}"
             )
 
+        generated_token_count = x.shape[1]
+        if fibo_edit_latents is not None:
+            refs = fibo_edit_latents
+            if refs.ndim == 2:
+                refs = refs.unsqueeze(0)
+            if refs.ndim != 3:
+                raise RuntimeError(f"Fibo Edit reference latents must be [B,S,C], got {tuple(refs.shape)}")
+            if refs.shape[-1] != self.in_channels:
+                raise RuntimeError(
+                    f"Fibo Edit reference latents expected {self.in_channels} channels, got {refs.shape[-1]}"
+                )
+            refs = refs.to(device=x.device, dtype=x.dtype)
+            if refs.shape[0] == 1 and b > 1:
+                refs = refs.repeat(b, 1, 1)
+            elif refs.shape[0] != b:
+                raise RuntimeError(
+                    f"Fibo Edit reference batch {refs.shape[0]} does not match latent batch {b}."
+                )
+            if fibo_edit_ids is None:
+                raise RuntimeError("Fibo Edit reference latents were provided without reference RoPE ids.")
+            x = torch.cat([x, refs], dim=1)
+        elif fibo_edit_ids is not None:
+            raise RuntimeError("Fibo Edit reference ids were provided without reference latents.")
+
         if x.shape[-1] != self.in_channels:
             raise RuntimeError(
                 f"Fibo expected {self.in_channels} latent channels after packing, "
@@ -227,7 +262,7 @@ class FiboTransformer(nn.Module):
         hidden=self.x_embedder(x)
         temb=self.time_embed(timestep.to(hidden.dtype),hidden.dtype)
         enc=self.context_embedder(context)
-        rope=make_rope(self.ids(enc.shape[1],h,w,hidden.device,hidden.dtype),self.axes_dims_rope,self.rope_theta)
+        rope=make_rope(self.ids(enc.shape[1],h,w,hidden.device,hidden.dtype,fibo_edit_ids),self.axes_dims_rope,self.rope_theta)
         total=len(self.transformer_blocks)+len(self.single_transformer_blocks)
         if fibo_text_layers.shape[1]<total:
             fibo_text_layers=torch.cat([fibo_text_layers,fibo_text_layers[:,-1:].repeat(1,total-fibo_text_layers.shape[1],1,1)],1)
@@ -248,6 +283,8 @@ class FiboTransformer(nn.Module):
             joined=block(torch.cat([enc,hidden],1),temb,rope,mask)
             enc,hidden=joined[:,:n],joined[:,n:]
         out=self.proj_out(self.norm_out(hidden,temb))
+        # Reference tokens condition the transformer but are never denoised by Comfy's sampler.
+        out=out[:,:generated_token_count]
 
         if input_ndim==5:
             out=out.reshape(b,h,w,self.in_channels).permute(0,3,1,2).contiguous()
@@ -294,4 +331,6 @@ class FiboBaseModel(comfy.model_base.BaseModel):
         if kwargs.get("cross_attn") is not None: out["c_crossattn"]=comfy.conds.CONDRegular(kwargs["cross_attn"])
         if kwargs.get("fibo_text_layers") is not None: out["fibo_text_layers"]=comfy.conds.CONDRegular(kwargs["fibo_text_layers"])
         if kwargs.get("fibo_attention_mask") is not None: out["fibo_attention_mask"]=comfy.conds.CONDRegular(kwargs["fibo_attention_mask"])
+        if kwargs.get("fibo_edit_latents") is not None: out["fibo_edit_latents"]=comfy.conds.CONDRegular(kwargs["fibo_edit_latents"])
+        if kwargs.get("fibo_edit_ids") is not None: out["fibo_edit_ids"]=comfy.conds.CONDRegular(kwargs["fibo_edit_ids"])
         return out
